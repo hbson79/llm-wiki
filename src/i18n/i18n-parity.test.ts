@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url"
 import { readFileSync } from "node:fs"
 import en from "./en.json"
 import zh from "./zh.json"
+import ko from "./ko.json"
 
 /** Flattens a nested translation object to "a.b.c" dot-path keys. */
 function flattenKeys(obj: unknown, prefix = ""): string[] {
@@ -104,5 +105,50 @@ describe("i18n bundle parity (en.json ↔ zh.json)", () => {
     }
     check(en, "en.json")
     check(zh, "zh.json")
+  })
+})
+
+describe("i18n bundle parity (en.json ↔ ko.json)", () => {
+  const enKeys = new Set(flattenKeys(en))
+  const koKeys = new Set(flattenKeys(ko))
+
+  it("every en.json key is also in ko.json", () => {
+    const missing = [...enKeys].filter((k) => !koKeys.has(k)).sort()
+    expect(
+      missing,
+      `Keys in en.json but missing from ko.json — add Korean translations for:\n  ${missing.join("\n  ")}`,
+    ).toEqual([])
+  })
+
+  it("every ko.json key is also in en.json (no orphaned ko-only strings)", () => {
+    const orphaned = [...koKeys].filter((k) => !enKeys.has(k)).sort()
+    expect(
+      orphaned,
+      `Keys in ko.json but missing from en.json — either add English translations or remove the stale ko-only keys:\n  ${orphaned.join("\n  ")}`,
+    ).toEqual([])
+  })
+
+  it("every ko.json leaf value is a non-empty string", () => {
+    for (const path of flattenKeys(ko)) {
+      let ref: unknown = ko
+      for (const part of path.split(".")) {
+        ref = (ref as Record<string, unknown>)[part]
+      }
+      expect(typeof ref, `ko.json: ${path} is not a string`).toBe("string")
+      expect((ref as string).length, `ko.json: ${path} is empty`).toBeGreaterThan(0)
+    }
+  })
+
+  it("ko.json pluralization keys come in pairs", () => {
+    const keys = new Set(flattenKeys(ko))
+    for (const k of keys) {
+      if (k.endsWith("_plural")) {
+        const singular = k.slice(0, -"_plural".length)
+        expect(
+          keys.has(singular),
+          `ko.json: found ${k} but no matching ${singular}`,
+        ).toBe(true)
+      }
+    }
   })
 })
