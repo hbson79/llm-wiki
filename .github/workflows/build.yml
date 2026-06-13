@@ -85,7 +85,15 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Build Tauri app
+      # macOS code signing is OPT-IN. tauri-action enters signing mode
+      # whenever APPLE_CERTIFICATE is set to a non-empty value; if the
+      # secret is missing it would still try (and fail with "failed to
+      # import keychain certificate"). We gate the whole signing env on
+      # a repo variable so a fork without an Apple Developer cert just
+      # produces an unsigned .app/.dmg (fine for internal distribution),
+      # and adding the secrets later flips signing on with no edits here.
+      - name: Build Tauri app (signed — Apple cert present)
+        if: matrix.platform != 'macos-latest' || vars.MACOS_SIGNING == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -101,6 +109,26 @@ jobs:
           # empty so tauri-action skips the release-upload step and
           # just produces bundle artifacts — useful for testing a
           # branch build without polluting the Releases page.
+          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          releaseName: ${{ github.event_name == 'push' && format('LLM Wiki {0}', github.ref_name) || '' }}
+          releaseBody: 'See the assets below for download links.'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      # Fallback for forks without an Apple Developer certificate
+      # (vars.MACOS_SIGNING != 'true'). Same build, but no APPLE_* env,
+      # so tauri-action never enters signing mode and emits an unsigned
+      # .app/.dmg. Users will see Gatekeeper's "unidentified developer"
+      # prompt on first launch (right-click → Open to allow) — acceptable
+      # for internal distribution. Only runs on macOS; other platforms
+      # are fully handled by the signed step above.
+      - name: Build Tauri app (unsigned — no Apple cert)
+        if: matrix.platform == 'macos-latest' && vars.MACOS_SIGNING != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
           tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
           releaseName: ${{ github.event_name == 'push' && format('LLM Wiki {0}', github.ref_name) || '' }}
           releaseBody: 'See the assets below for download links.'
